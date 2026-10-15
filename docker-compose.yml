@@ -1,14 +1,10 @@
 services:
-  app:
+  api-backend:
     build: .
-    expose:
-      - "5000"
-
-  nginx:
-    image: nginx:alpine
     ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - app
+      - "5000:5000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 128M
