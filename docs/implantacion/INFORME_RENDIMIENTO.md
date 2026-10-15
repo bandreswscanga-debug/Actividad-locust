@@ -2,36 +2,62 @@
 
 ## 1. Objetivo
 
-Evaluar el rendimiento de la aplicación en las tres fases de la actividad, comparando las solicitudes por segundo, el tiempo de respuesta del percentil 95 (P95) y el porcentaje de errores. En la Fase 3 también se realiza una prueba de caos para observar el comportamiento del sistema cuando una réplica del backend se detiene.
+Evaluar el rendimiento de la aplicación en las tres fases de la actividad, comparando las solicitudes por segundo (RPS), el tiempo de respuesta del percentil 95 (P95), el porcentaje de errores y la cantidad de usuarios concurrentes. En la Fase 3 también se realiza una prueba de caos para observar el comportamiento del sistema cuando una réplica del backend se detiene.
 
-## 2. Resultados de las pruebas
+## 2. Tabla comparativa de resultados
 
-| Fase | Configuración | Usuarios | RPS | P95 (ms) | Errores |
-|---|---|---:|---:|---:|---:|
-| Fase 1 | Flask, servidor de desarrollo | Pendiente | Pendiente | Pendiente | Pendiente |
-| Fase 2 | Gunicorn con 4 workers | Pendiente | Pendiente | Pendiente | Pendiente |
-| Fase 3 | Nginx y 3 réplicas del backend | 150 configurados; 149 activos en la captura | 73,1 | 41 | 0 % |
+| Fase | Servidor / Arquitectura | Límite de CPU | Usuarios concurrentes | RPS logrados | Latencia P95 (ms) | % Errores |
+|---|---|---|---:|---:|---:|---:|
+| Fase 1 | Flask Dev (`app.run`) | 0,20 cores | 50 | 32 | 12 | 0 % |
+| Fase 2 | Gunicorn (4 workers) | 0,20 cores | 50 | 24,2 | 190 | 0 % |
+| Fase 3 | Nginx + 3 réplicas del backend | 0,20 cores por réplica | 150 | 73,1 | 41 | 0 % |
 
-Los valores de las fases 1 y 2 se completarán con los resultados reales obtenidos por los compañeros responsables de esas pruebas.
+### 2.1. Análisis comparativo
+
+La Fase 1, basada en el servidor de desarrollo de Flask, alcanzó 32 solicitudes por segundo con 50 usuarios concurrentes y una latencia P95 de 12 ms. En la Fase 2, Gunicorn con cuatro workers registró 24,2 solicitudes por segundo y una latencia P95 de 190 ms. Aunque Gunicorn permite gestionar solicitudes mediante varios procesos de trabajo, los resultados muestran que añadir workers no garantiza por sí solo un mejor rendimiento. El comportamiento también depende de la aplicación, de los recursos disponibles y de las condiciones de la prueba.
+
+La Fase 3, con Nginx y tres réplicas del backend, alcanzó 73,1 solicitudes por segundo con 150 usuarios concurrentes, un P95 de 41 ms y 0 % de errores registrados. Fue la configuración con mayor rendimiento medido y permitió probar una cantidad superior de usuarios concurrentes. Sin embargo, hay una diferencia importante en los recursos: las fases 1 y 2 tenían un límite de 0,20 cores, mientras que la Fase 3 asignó 0,20 cores a cada una de las tres réplicas, lo que representa hasta 0,60 cores agregados para los backends, sin contar Nginx. Por esta razón, la mejora observada debe interpretarse teniendo en cuenta tanto la arquitectura como los recursos adicionales asignados.
 
 ## 3. Prueba de caos de la Fase 3
 
-Durante la prueba se detuvo el contenedor `actividad-locust-api-backend-2`. Los contenedores de las réplicas 1 y 3 y el contenedor de Nginx permanecieron activos.
+Durante la prueba se detuvo el contenedor `actividad-locust-api-backend-2`. Las réplicas 1 y 3 y el contenedor de Nginx permanecieron activos.
 
-En la captura de Locust se registraron 25.185 solicitudes, 0 solicitudes fallidas, un P95 de 41 ms y un rendimiento agregado de 73,1 solicitudes por segundo. Estos resultados corresponden a la captura tomada durante la prueba; por sí solos no demuestran que todas las solicitudes se procesaran mientras la réplica estaba detenida, por lo que deben interpretarse junto con la evidencia de Docker y el intervalo exacto de la prueba.
+En la captura de Locust se registraron los siguientes resultados:
 
-## 4. Análisis técnico
+- Usuarios configurados: 150.
+- Usuarios activos mostrados en la captura: 149.
+- Solicitudes totales: 25.185.
+- Solicitudes fallidas: 0.
+- Porcentaje de errores: 0 %.
+- Rendimiento agregado: 73,1 solicitudes por segundo.
+- Latencia P95: 41 ms.
+- Latencia P99: 230 ms.
+- Tiempo máximo registrado: 22.891 ms.
 
-Gunicorn permite atender solicitudes mediante varios workers, mientras que Nginx actúa como punto de entrada y distribuye las solicitudes entre las réplicas configuradas del backend. Esta arquitectura puede mejorar la capacidad de atención y evitar que una sola instancia sea el único punto de procesamiento. El resultado definitivo de la comparación dependerá de los valores medidos en las tres fases y de las condiciones de cada prueba.
+El porcentaje de errores fue favorable durante la prueba registrada. No obstante, para confirmar que la arquitectura toleró correctamente la caída de una réplica, es importante verificar que las solicitudes continuaron ejecutándose durante todo el intervalo en que el contenedor estuvo detenido. Los resultados también muestran que, aunque el P95 fue de 41 ms, al menos una solicitud presentó una demora considerable, con un máximo de 22.891 ms.
 
-En la prueba de caos, las dos réplicas restantes y Nginx continuaron activos después de detener una instancia. El 0 % de errores registrado es favorable; sin embargo, para confirmar la tolerancia a fallos es necesario verificar que Locust siguió enviando solicitudes durante todo el intervalo con la réplica detenida. También se debe considerar el tiempo máximo registrado de 22.891 ms, que indica que al menos una solicitud tuvo una demora considerable.
+## 4. Análisis técnico de la arquitectura
+
+Flask Dev permite realizar pruebas básicas de la aplicación, mientras que Gunicorn proporciona varios workers para atender solicitudes mediante procesos de trabajo. Nginx, por su parte, actúa como punto de entrada y puede distribuir las solicitudes entre las réplicas del backend configuradas en el servicio. Esta arquitectura permite probar una estrategia de escalabilidad horizontal y reducir la dependencia de una sola instancia de aplicación.
+
+En las mediciones obtenidas, la Fase 3 presentó el mayor rendimiento, con 73,1 RPS y 0 % de errores, frente a los 32 RPS de la Fase 1 y los 24,2 RPS de la Fase 2. La comparación no es completamente equivalente porque la Fase 3 utilizó 150 usuarios y dispuso de mayores recursos agregados para los backends. Por ello, los resultados respaldan el comportamiento observado en esta configuración, pero no permiten atribuir toda la mejora exclusivamente a Nginx o al número de réplicas.
 
 ## 5. Evidencias
 
-- Captura de Docker con la réplica 2 detenida y las réplicas 1 y 3 activas.
+### 5.1. Docker: réplica detenida
 
-- Captura de Locust con los resultados de la prueba de carga y el porcentaje de fallos.
+La captura muestra el estado de los contenedores durante la prueba de caos. La réplica 2 aparece detenida, mientras que las réplicas 1 y 3 y Nginx permanecen activos.
+
+![Docker: réplica detenida](evidencias/docker-replica-detenida.png)
+
+### 5.2. Locust: resultados de la prueba de carga
+
+La captura muestra las métricas registradas por Locust durante la prueba, incluyendo el total de solicitudes, el rendimiento y el porcentaje de fallos.
+
+![Locust: resultados de la prueba de carga](evidencias/locust-prueba-caos.png)
 
 ## 6. Conclusión
 
-La Fase 3 registró 25.185 solicitudes sin fallos en la captura analizada, con un P95 de 41 ms y un rendimiento agregado de 73,1 solicitudes por segundo. Los resultados de las fases 1 y 2 permitirán establecer una comparación completa y determinar las diferencias de rendimiento entre las configuraciones.
+Los resultados muestran diferencias entre las tres configuraciones evaluadas. La Fase 1 obtuvo 32 RPS y un P95 de 12 ms; la Fase 2 alcanzó 24,2 RPS y un P95 de 190 ms; y la Fase 3 registró 73,1 RPS y un P95 de 41 ms con 150 usuarios concurrentes. Las tres pruebas reportaron 0 % de errores según los datos suministrados.
+
+La arquitectura de la Fase 3 presentó el mayor rendimiento medido y permitió realizar una prueba de caos con una de las réplicas detenida. Las evidencias documentan el estado de los contenedores y las métricas de Locust. Para interpretar los resultados correctamente, se deben considerar las diferencias en usuarios concurrentes y límites agregados de CPU, así como verificar el comportamiento de las solicitudes durante el intervalo exacto de la prueba de caos.
